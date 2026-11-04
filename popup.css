@@ -668,7 +668,21 @@ input[type="text"]:focus {
 /* Footer */
 .footer {
   text-align: center;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
+}
+
+.footer a,
+.footer-link {
+  color: var(--accent-green);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.15s ease, text-decoration 0.15s ease;
+}
+
+.footer a:hover,
+.footer-link:hover {
+  text-decoration: underline;
+  color: var(--accent-emerald);
 }
 

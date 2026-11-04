@@ -319,6 +319,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   setupClearButton();
 
+  // Handle external links opening in new browser tabs
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('a[target="_blank"]');
+    if (link && link.href) {
+      e.preventDefault();
+      chrome.tabs.create({ url: link.href });
+    }
+  });
+
   function escapeHtml(str) {
     if (!str) return '';
     return str
