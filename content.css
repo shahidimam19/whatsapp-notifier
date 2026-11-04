@@ -1,0 +1,37 @@
+/* WhatsApp Direct & Mention Notifier - Content Styles */
+
+.wa-notifier-highlight-mention {
+  outline: 2px solid #25D366 !important;
+  background-color: rgba(37, 211, 102, 0.12) !important;
+  border-radius: 6px;
+  transition: background-color 0.3s ease;
+}
+
+.wa-notifier-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #1f2c34;
+  color: #e9edef;
+  border-left: 4px solid #25D366;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  padding: 12px 18px;
+  z-index: 999999;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  max-width: 320px;
+  animation: wa-slide-in 0.3s ease-out;
+}
+
+@keyframes wa-slide-in {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+

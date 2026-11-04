@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp Direct & Mention Notifier</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo-wrapper">
+          <img src="icons/icon48.png" alt="Logo" class="logo">
+        </div>
+        <div>
+          <h1 class="title">WhatsApp Notifier</h1>
+          <p class="subtitle">Direct Messages & Group Mentions</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="connection-status" id="connectionStatus" title="WhatsApp Web Tab Status">
+          <span class="status-dot status-offline" id="statusDot"></span>
+          <span class="status-text" id="statusText">Checking...</span>
+        </div>
+        <button id="btnSettingsToggle" class="btn-settings-icon" title="Settings">⚙️</button>
+      </div>
+    </header>
+
+    <!-- MAIN VIEW: Recent Activity Feed -->
+    <main id="activityView">
+      <section class="section section-highlight">
+        <div class="section-header-flex">
+          <h2 class="section-title">Recent Activity</h2>
+          <div id="clearContainer">
+            <button id="btnClearHistory" class="btn-link">Clear</button>
+          </div>
+        </div>
+        <div class="history-list history-list-expanded" id="historyList">
+          <div class="empty-state" id="emptyHistory">No notifications received yet.</div>
+        </div>
+      </section>
+    </main>
+
+    <!-- SETTINGS VIEW: Hidden by default, toggled via Settings button -->
+    <section id="settingsView" class="settings-panel" style="display: none;">
+      <div class="settings-header">
+        <button id="btnBackToActivity" class="btn-back">← Back to Activity</button>
+        <span class="settings-header-title">Settings</span>
+      </div>
+
+      <!-- Notification Sound Setting -->
+      <div class="section">
+        <div class="toggle-item">
+          <div class="toggle-info">
+            <span class="toggle-title">🔊 Notification Sound</span>
+            <span class="toggle-desc">Play chime alert when notified</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggleAudio" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Personal Mention Identifiers -->
+      <div class="section">
+        <div class="section-header-flex">
+          <h2 class="section-title">Your Name / Mention Identifiers</h2>
+        </div>
+        <p class="section-help">Only messages tagging these names or numbers will notify you:</p>
+        <div class="keyword-input-wrapper">
+          <input type="text" id="keywordInput" placeholder="e.g. Shahid, Shahid Imam, +91987..." />
+          <button id="addKeywordBtn" class="btn btn-sm btn-primary">Add</button>
+        </div>
+        <div class="keywords-tag-container" id="keywordsContainer">
+          <!-- Rendered tags -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <span>Keeping WhatsApp Web distraction-free.</span>
+    </footer>
+  </div>
+
+  <script src="sound.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
