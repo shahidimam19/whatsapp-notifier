@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "WhatsApp Direct & Mention Notifier",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Notifies you when someone sends you a direct message or tags/mentions you in any WhatsApp group.",
   "permissions": [
     "notifications",

@@ -28,8 +28,7 @@
   const chatStateMap = new Map();       // chatTitle -> { unreadCount, lastSnippet, lastNotifiedSnippet, isGroup }
   const seenBubbleIds = new Set();      // data-id of processed message bubbles
   const notifiedSignatures = new Map(); // signature -> timestamp
-  const knownGroupTitles = new Set();   // Cached group chat titles
-  const knownDMTitles = new Set();      // Cached 1-on-1 chat titles
+  const knownGroupTitles = new Set();   // Confirmed group chat titles (one-way dynamic promotion)
 
   let isTabFocused = document.hasFocus();
   let isInitialBaselineDone = false;
@@ -110,16 +109,34 @@
   // Listen to hooked native notifications from injected.js
   function handleWindowMessage(event) {
     if (event.data && event.data.source === 'WA_NOTIFIER_PAGE_HOOK') {
-      const { title, body } = event.data;
+      const { title, body, tag, isGroupHint } = event.data;
       if (!body) return;
       const cleanBody = cleanUnicode(body);
       const cleanTitle = cleanUnicode(title);
       if (!isValidMessageSnippet(cleanBody)) return;
 
       const parsed = splitSenderAndMessage(cleanBody);
-      const isGrp = knownGroupTitles.has(cleanTitle) || parsed.hasPrefix;
+
+      // Determine if it is a group:
+      // 1. Explicit JID hint from injected page hook (e.g. tag contains @g.us)
+      // 2. Already confirmed in knownGroupTitles
+      // 3. Sender prefix parsed ("Sender: Message")
+      // 4. Characteristic group metadata phrases
+      let isGrp = false;
+      if (isGroupHint === true) {
+        isGrp = true;
+      } else if (isGroupHint === false) {
+        isGrp = false;
+      } else {
+        isGrp =
+          knownGroupTitles.has(cleanTitle) ||
+          parsed.hasPrefix ||
+          /is also in this group|in this group|\b\d+\s+members\b|group\s+notification/i.test(cleanBody) ||
+          (tag && String(tag).includes('@g.us'));
+      }
 
       if (isGrp) {
+        knownGroupTitles.add(cleanTitle);
         // Only trigger if message specifically matches a saved tag in user's list
         const msgToCheck = parsed.hasPrefix ? parsed.message : cleanBody;
         const matchedTag = findMatchingTag(msgToCheck) || findMatchingTag(cleanBody);
@@ -135,6 +152,12 @@
         }
       } else {
         // Direct message
+        // Verify with existing chat state to avoid misfiring if sidebar marked it group
+        const existingState = chatStateMap.get(cleanTitle);
+        if (existingState && existingState.isGroup) {
+          return;
+        }
+
         if (config.notifyDM) {
           dispatchNotification({
             category: 'DM',
@@ -288,15 +311,46 @@
   }
 
   /**
+   * Extracts sender and message by inspecting DOM card lines (colon separator)
+   * or falling back to text snippet parsing.
+   */
+  function extractSenderAndMessage(rawSnippet, rowElement) {
+    if (rowElement) {
+      const cardText = rowElement.innerText || '';
+      const lines = cardText.split('\n').map((l) => l.trim()).filter(Boolean);
+      const colonIndex = lines.indexOf(':') !== -1 ? lines.indexOf(':') : lines.indexOf('：');
+      if (colonIndex > 0 && colonIndex < lines.length - 1) {
+        const sender = lines[colonIndex - 1];
+        const message = lines.slice(colonIndex + 1).join(' ').trim();
+        if (sender && !sender.toLowerCase().includes('draft') && sender.length <= 50) {
+          return {
+            hasPrefix: true,
+            sender: cleanUnicode(sender),
+            message: cleanUnicode(message)
+          };
+        }
+      }
+    }
+
+    return splitSenderAndMessage(rawSnippet);
+  }
+
+  /**
    * Determines if a chat is a Group.
+   * Multi-layered heuristic detection:
+   * 1. Confirmed cache (knownGroupTitles)
+   * 2. Group SVG / Status icons
+   * 3. Group metadata phrases in card text ("in this group", "members")
+   * 4. Multi-line structure (Sender -> Colon ':' -> Message)
+   * 5. Secondary container preview spans with colon
+   * 6. Fallback snippet prefix parsing ("Sender: Message")
    */
   function detectIsGroup(chatTitle, rowElement, rawSnippet) {
     const normTitle = (chatTitle || '').trim();
     if (knownGroupTitles.has(normTitle)) return true;
-    if (knownDMTitles.has(normTitle)) return false;
 
-    // 1. Group / Community / Channel / Mention icons in chat row
     if (rowElement) {
+      // 1. Group / Community / Channel / Mention SVG icons anywhere in chat row
       const groupIcon =
         rowElement.querySelector('[data-icon="default-group"]') ||
         rowElement.querySelector('[data-icon="community"]') ||
@@ -313,39 +367,50 @@
         knownGroupTitles.add(normTitle);
         return true;
       }
-    }
 
-    // 2. Check if snippet has a sender prefix ("Sender: Message")
-    if (rawSnippet) {
-      const parsed = splitSenderAndMessage(rawSnippet);
-      if (parsed.hasPrefix) {
-        const senderLower = parsed.sender.toLowerCase();
-        if (senderLower !== 'draft') {
+      const cardText = rowElement.innerText || rowElement.textContent || '';
+
+      // 2. Metadata text phrases strictly found only in groups
+      if (/is also in this group|in this group|\b\d+\s+members\b|group\s+notification/i.test(cardText)) {
+        knownGroupTitles.add(normTitle);
+        return true;
+      }
+
+      // 3. Line-based sender prefix inspection
+      // WhatsApp Web renders sender name, colon ':', and preview text as separate lines
+      const lines = cardText.split('\n').map((l) => l.trim()).filter(Boolean);
+      const colonIndex = lines.indexOf(':') !== -1 ? lines.indexOf(':') : lines.indexOf('：');
+      if (colonIndex > 0) {
+        const potentialSender = lines[colonIndex - 1];
+        if (potentialSender && !potentialSender.toLowerCase().includes('draft') && potentialSender.length <= 50) {
+          knownGroupTitles.add(normTitle);
+          return true;
+        }
+      }
+
+      // 4. Secondary preview container inspection (colon span)
+      const secondary =
+        rowElement.querySelector('div[data-testid="cell-frame-secondary"]') ||
+        rowElement.querySelector('div[role="gridcell"]:last-child') ||
+        rowElement.querySelector('div._ak8l') ||
+        rowElement;
+
+      if (secondary) {
+        const spans = Array.from(secondary.querySelectorAll('span'));
+        const hasColonSpan = spans.some((s) => s.textContent.trim() === ':' || s.textContent.trim() === '：');
+        if (hasColonSpan) {
           knownGroupTitles.add(normTitle);
           return true;
         }
       }
     }
 
-    // 3. Inspect child spans of preview container
-    if (rowElement) {
-      const previewContainer =
-        rowElement.querySelector('div[data-testid="cell-frame-secondary"]') ||
-        rowElement.querySelector('div[role="gridcell"]:last-child') ||
-        rowElement.querySelector('div._ak8l') ||
-        rowElement.querySelector('span._ao3e');
-
-      if (previewContainer) {
-        const spans = Array.from(previewContainer.querySelectorAll('span'));
-        const colonSpan = spans.find((s) => s.textContent.trim() === ':' || s.textContent.trim() === '：');
-        if (colonSpan) {
-          const fullText = cleanUnicode(previewContainer.textContent);
-          const parsed = splitSenderAndMessage(fullText);
-          if (parsed.hasPrefix && parsed.sender.toLowerCase() !== 'draft') {
-            knownGroupTitles.add(normTitle);
-            return true;
-          }
-        }
+    // 5. Snippet text prefix check ("Sender: Message")
+    if (rawSnippet) {
+      const parsed = splitSenderAndMessage(rawSnippet);
+      if (parsed.hasPrefix && parsed.sender.toLowerCase() !== 'draft') {
+        knownGroupTitles.add(normTitle);
+        return true;
       }
     }
 
@@ -606,9 +671,6 @@
 
     // 4. Classify Group vs 1-on-1 (Direct)
     const isGroup = detectIsGroup(title, row, snippet);
-    if (!isGroup && !knownGroupTitles.has(title)) {
-      knownDMTitles.add(title);
-    }
 
     // 5. Detect Mention: ONLY AND EXCLUSIVELY when the message text matches a keyword in user's list!
     // Never auto-detect or guess from icons.
@@ -617,10 +679,10 @@
     if (isGroup && snippet) {
       const isOutbound = !!row.querySelector('[data-icon^="status-vcheck"], [data-icon^="status-dblcheck"], [data-icon="status-time"]');
       if (!isOutbound) {
-        const parsed = splitSenderAndMessage(snippet);
-        // Test message body and full snippet against user's saved list
+        const parsed = extractSenderAndMessage(snippet, row);
+        // Test message body, full snippet, and card text against user's saved list
         const textToTest = parsed.hasPrefix ? parsed.message : snippet;
-        const matched = findMatchingTag(textToTest) || findMatchingTag(snippet);
+        const matched = findMatchingTag(textToTest) || findMatchingTag(snippet) || findMatchingTag(row.innerText || '');
         if (matched) {
           hasMentionForMe = true;
           matchedSavedTag = matched;
@@ -684,7 +746,7 @@
           if (data.hasMention && config.notifyMention) {
             const isSnippetNew = normalizeSnippet(data.snippet) !== normalizeSnippet(prevNotified);
             if (isSnippetNew) {
-              const parsed = splitSenderAndMessage(data.snippet);
+              const parsed = extractSenderAndMessage(data.snippet, row);
               dispatchNotification({
                 category: 'MENTION',
                 title: `Tagged in ${data.title}`,
@@ -699,13 +761,26 @@
                 unreadCount: data.unreadCount,
                 lastSnippet: data.snippet,
                 lastNotifiedSnippet: data.snippet,
-                isGroup: data.isGroup
+                isGroup: true
               });
               continue;
             }
           }
         } else {
           // 1-on-1 Direct Message
+          // Re-verify the row element to catch any newly rendered group markers before alerting
+          const recheckedIsGroup = detectIsGroup(data.title, row, data.snippet);
+          if (recheckedIsGroup) {
+            // Promoted to group: do not dispatch false DM alert!
+            chatStateMap.set(data.title, {
+              unreadCount: data.unreadCount,
+              lastSnippet: data.snippet,
+              lastNotifiedSnippet: data.snippet,
+              isGroup: true
+            });
+            continue;
+          }
+
           const isContentNew = normalizeSnippet(data.snippet) !== normalizeSnippet(prevNotified);
           const isCountIncremented = data.unreadCount > prevUnread;
 
@@ -725,7 +800,7 @@
               unreadCount: data.unreadCount,
               lastSnippet: data.snippet,
               lastNotifiedSnippet: data.snippet,
-              isGroup: data.isGroup
+              isGroup: false
             });
             continue;
           }

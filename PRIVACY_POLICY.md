@@ -35,3 +35,4 @@ The Extension does not use any third-party analytics, tracking scripts, tracking
 ### 6. Contact
 If you have questions about this Privacy Policy, please open an issue on GitHub:
 https://github.com/shahidimam19/whatsapp-notifier
+

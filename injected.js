@@ -1,6 +1,7 @@
 /**
  * Injected into WhatsApp Web page context (window).
- * Hooks native Notification API to catch real-time background notification dispatches.
+ * Hooks native Notification API to catch real-time background notification dispatches
+ * with intelligent Group (@g.us) vs DM (@c.us) JID identification.
  */
 (() => {
   if (window.__waNotifierHooked) return;
@@ -12,6 +13,23 @@
   function HookedNotification(title, options = {}) {
     try {
       const body = options.body || '';
+      const tag = String(options.tag || '');
+
+      let isGroupHint = null;
+      if (tag.includes('@g.us') || tag.toLowerCase().includes('group')) {
+        isGroupHint = true;
+      } else if (tag.includes('@c.us') || tag.includes('@s.whatsapp.net')) {
+        isGroupHint = false;
+      }
+
+      if (isGroupHint === null && options.data) {
+        try {
+          const str = typeof options.data === 'string' ? options.data : JSON.stringify(options.data);
+          if (str.includes('@g.us')) isGroupHint = true;
+          else if (str.includes('@c.us') || str.includes('@s.whatsapp.net')) isGroupHint = false;
+        } catch (_) {}
+      }
+
       window.postMessage(
         {
           source: 'WA_NOTIFIER_PAGE_HOOK',
@@ -19,13 +37,14 @@
           title: String(title || ''),
           body: String(body || ''),
           icon: options.icon || '',
-          tag: options.tag || '',
+          tag: tag,
+          isGroupHint: isGroupHint,
           timestamp: Date.now()
         },
         '*'
       );
     } catch (e) {
-      // Ignore
+      // Ignore errors
     }
 
     // Call original constructor
@@ -39,6 +58,5 @@
   HookedNotification.maxActions = OriginalNotification.maxActions;
 
   window.Notification = HookedNotification;
-  console.log('[WhatsApp Notifier] Page notification interceptor initialized.');
+  console.log('[WhatsApp Notifier] Enhanced page notification interceptor initialized.');
 })();
-
