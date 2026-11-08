@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS = {
   notifyWhenFocused: true,
   focusTabOnClick: true,
   customKeywords: [],
+  mutedDMContacts: [],
   notificationHistory: [],
   stats: {
     dmCount: 0,
@@ -116,7 +117,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function handleTriggerNotification(payload, senderTabId) {
-  const { category, title, body, chatTitle, sender, matchedTag } = payload;
+  const { category, title, body, chatTitle, sender, matchedTag, avatarUrl } = payload;
 
   // Reject any unread badge text
   if (!body || /^\d*\s*unread\s*(message|msg|chat)s?$/i.test(body.trim()) || /^\d+$/.test(body.trim())) {
@@ -128,9 +129,22 @@ async function handleTriggerNotification(payload, senderTabId) {
     return;
   }
 
-  const settings = await chrome.storage.local.get(['notifyDM', 'notifyMention']);
+  const settings = await chrome.storage.local.get(['notifyDM', 'notifyMention', 'mutedDMContacts']);
   if (category === 'DM' && settings.notifyDM === false) return;
   if (category === 'MENTION' && settings.notifyMention === false) return;
+
+  // Suppress DM notifications for user-muted contacts
+  if (category === 'DM' && Array.isArray(settings.mutedDMContacts) && settings.mutedDMContacts.length > 0) {
+    const rawTarget = (chatTitle || title || '').trim().toLowerCase();
+    const isMuted = settings.mutedDMContacts.some((item) => {
+      const term = (item || '').trim().toLowerCase();
+      return term && (rawTarget === term || rawTarget.includes(term) || term.includes(rawTarget));
+    });
+    if (isMuted) {
+      console.log('[WhatsApp Notifier BG] Suppressed DM alert for muted contact:', rawTarget);
+      return;
+    }
+  }
 
   const notifId = `wa_${category}_${Date.now()}`;
   if (senderTabId) {
@@ -166,6 +180,7 @@ async function handleTriggerNotification(payload, senderTabId) {
     sender: sender || '',
     chatTitle,
     matchedTag: matchedTag || '',
+    avatarUrl: avatarUrl || '',
     isLocked: category === 'MENTION',
     unreadCount: payload.unreadCount || 1,
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -192,6 +207,7 @@ async function recordNotificationHistory(entry) {
       existing.body = entry.body; // Always updated with the last message containing the added tag
       existing.sender = entry.sender || existing.sender;
       existing.matchedTag = entry.matchedTag || existing.matchedTag;
+      if (entry.avatarUrl) existing.avatarUrl = entry.avatarUrl;
       existing.time = entry.time;
       existing.date = entry.date;
       existing.isRead = false;
@@ -219,6 +235,7 @@ async function recordNotificationHistory(entry) {
       existing.id = entry.id;
       existing.title = entry.title;
       existing.body = entry.body;
+      if (entry.avatarUrl) existing.avatarUrl = entry.avatarUrl;
       existing.time = entry.time;
       existing.date = entry.date;
       existing.isRead = false;

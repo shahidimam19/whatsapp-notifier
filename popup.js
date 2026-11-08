@@ -14,6 +14,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const addKeywordBtn = document.getElementById('addKeywordBtn');
   const keywordsContainer = document.getElementById('keywordsContainer');
 
+  const mutedContactInput = document.getElementById('mutedContactInput');
+  const addMutedContactBtn = document.getElementById('addMutedContactBtn');
+  const mutedContactsContainer = document.getElementById('mutedContactsContainer');
+
   const historyList = document.getElementById('historyList');
   const emptyHistory = document.getElementById('emptyHistory');
   const clearContainer = document.getElementById('clearContainer');
@@ -53,6 +57,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   let currentKeywords = [];
+  let currentMutedContacts = [];
   let cachedHistory = [];
 
   // Clear extension badge when popup opens
@@ -63,6 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     [
       'playAudio',
       'customKeywords',
+      'mutedDMContacts',
       'notificationHistory'
     ],
     (data) => {
@@ -73,6 +79,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Keywords
       currentKeywords = Array.isArray(data.customKeywords) ? data.customKeywords : [];
       renderKeywords();
+
+      // Muted Contacts
+      currentMutedContacts = Array.isArray(data.mutedDMContacts) ? data.mutedDMContacts : [];
+      renderMutedContacts();
 
       // History
       cachedHistory = data.notificationHistory || [];
@@ -183,6 +193,57 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (e.key === 'Enter') {
         e.preventDefault();
         addKeyword();
+      }
+    });
+  }
+
+  // Muted Contacts management (Direct Messages)
+  function renderMutedContacts() {
+    if (!mutedContactsContainer) return;
+    mutedContactsContainer.innerHTML = '';
+    currentMutedContacts.forEach((contact, index) => {
+      const tag = document.createElement('div');
+      tag.className = 'keyword-tag muted-contact-tag';
+      tag.innerHTML = `
+        <span>🔇 ${escapeHtml(contact)}</span>
+        <span class="keyword-tag-remove" data-index="${index}" title="Unmute contact">&times;</span>
+      `;
+      mutedContactsContainer.appendChild(tag);
+    });
+
+    mutedContactsContainer.querySelectorAll('.keyword-tag-remove').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const idx = parseInt(e.target.dataset.index, 10);
+        if (!isNaN(idx) && idx >= 0 && idx < currentMutedContacts.length) {
+          currentMutedContacts.splice(idx, 1);
+          chrome.storage.local.set({ mutedDMContacts: currentMutedContacts });
+          renderMutedContacts();
+        }
+      });
+    });
+  }
+
+  function addMutedContact() {
+    if (!mutedContactInput) return;
+    const val = mutedContactInput.value.trim();
+    if (!val) return;
+    const isAlreadyAdded = currentMutedContacts.some((c) => c.toLowerCase() === val.toLowerCase());
+    if (!isAlreadyAdded) {
+      currentMutedContacts.push(val);
+      chrome.storage.local.set({ mutedDMContacts: currentMutedContacts });
+      renderMutedContacts();
+    }
+    mutedContactInput.value = '';
+  }
+
+  if (addMutedContactBtn) {
+    addMutedContactBtn.addEventListener('click', addMutedContact);
+  }
+  if (mutedContactInput) {
+    mutedContactInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addMutedContact();
       }
     });
   }

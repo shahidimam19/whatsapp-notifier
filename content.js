@@ -21,7 +21,8 @@
     notifyMention: true,
     playAudio: true,
     notifyWhenFocused: true,
-    customKeywords: []
+    customKeywords: [],
+    mutedDMContacts: []
   };
 
   // State tracking
@@ -49,14 +50,15 @@
   // Load initial settings
   if (isExtensionValid()) {
     try {
-      chrome.storage.local.get(['notifyDM', 'notifyMention', 'playAudio', 'notifyWhenFocused', 'customKeywords'], (res) => {
+      chrome.storage.local.get(['notifyDM', 'notifyMention', 'playAudio', 'notifyWhenFocused', 'customKeywords', 'mutedDMContacts'], (res) => {
         if (!res) return;
         if (res.notifyDM !== undefined) config.notifyDM = res.notifyDM;
         if (res.notifyMention !== undefined) config.notifyMention = res.notifyMention;
         if (res.playAudio !== undefined) config.playAudio = res.playAudio;
         if (res.notifyWhenFocused !== undefined) config.notifyWhenFocused = res.notifyWhenFocused;
         if (Array.isArray(res.customKeywords)) config.customKeywords = res.customKeywords;
-        console.log('[WhatsApp Notifier] Initial keywords loaded:', config.customKeywords);
+        if (Array.isArray(res.mutedDMContacts)) config.mutedDMContacts = res.mutedDMContacts;
+        console.log('[WhatsApp Notifier] Initial keywords loaded:', config.customKeywords, 'Muted DMs:', config.mutedDMContacts);
       });
     } catch (e) {}
   }
@@ -73,6 +75,10 @@
     if (changes.notifyMention) config.notifyMention = changes.notifyMention.newValue;
     if (changes.playAudio) config.playAudio = changes.playAudio.newValue;
     if (changes.notifyWhenFocused) config.notifyWhenFocused = changes.notifyWhenFocused.newValue;
+    if (changes.mutedDMContacts) {
+      config.mutedDMContacts = changes.mutedDMContacts.newValue || [];
+      console.log('[WhatsApp Notifier] Updated muted DM contacts list:', config.mutedDMContacts);
+    }
     if (changes.customKeywords) {
       config.customKeywords = changes.customKeywords.newValue || [];
       console.log('[WhatsApp Notifier] Updated custom keywords list:', config.customKeywords);
@@ -158,6 +164,11 @@
           return;
         }
 
+        // Skip if contact is muted by user for direct messages
+        if (isDirectMessageMuted(cleanTitle)) {
+          return;
+        }
+
         if (config.notifyDM) {
           dispatchNotification({
             category: 'DM',
@@ -203,6 +214,21 @@
       .replace(/[\u200B-\u200D\u200E\u200F\u202A-\u202E]/g, '')
       .replace(/[\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/g, ' ')
       .trim();
+  }
+
+  /**
+   * Checks if a contact name or title is in the user-muted DM contacts list.
+   * Matches case-insensitively, trimmed, and handles partial or exact matches.
+   */
+  function isDirectMessageMuted(contactName) {
+    if (!Array.isArray(config.mutedDMContacts) || config.mutedDMContacts.length === 0) return false;
+    const cleanName = cleanUnicode(contactName).trim().toLowerCase();
+    if (!cleanName) return false;
+    return config.mutedDMContacts.some((item) => {
+      const term = cleanUnicode(item).trim().toLowerCase();
+      if (!term) return false;
+      return cleanName === term || cleanName.includes(term) || term.includes(cleanName);
+    });
   }
 
   function escapeRegex(str) {
@@ -283,8 +309,45 @@
     return true;
   }
 
+  /**
+   * Sanitizes message snippet by removing SVG/icon strings, unread badge numbers,
+   * push-pin indicators, and accessibility duplicate spans.
+   */
+  function sanitizeMessageText(raw) {
+    if (!raw) return '';
+    let text = cleanUnicode(raw);
+
+    // 1. Remove icon artifacts, badge strings, and push-pin noise
+    text = text
+      .replace(/ic-push-pin\d*/gi, '')
+      .replace(/\bstatus-(?:vcheck|dblcheck|check|time|image|camera)\b/gi, '')
+      .replace(/\b\d+\s+unread\s+(?:messages?|chats?)\b/gi, '')
+      .trim();
+
+    // 2. Remove trailing badge number artifacts (e.g. " 7 7" or " 7")
+    text = text.replace(/(\s+\d+)+$/g, '').trim();
+
+    // 3. Deduplicate repeated consecutive phrases (e.g. "@Shahid Imam @Shahid Imam" -> "@Shahid Imam")
+    text = text.replace(/(@[\w\s]{2,30}?)\s+\1\b/gi, '$1');
+    text = text.replace(/(@[\w\s]{2,30}?)\s+\1\b/gi, '$1');
+
+    // 4. Remove plain name duplicate immediately following @tag (e.g. "@Shahid Imam Shahid Imam" -> "@Shahid Imam")
+    text = text.replace(/(@([\w\s]{2,30}))\s+\2\b/gi, '$1');
+
+    // 5. Deduplicate repeated prefix (e.g. "Self: @Shahid Imam Self: " -> "Self: ")
+    const doublePrefixMatch = text.match(/^([^:：]{1,30})[:：]\s*@[\w\s]{2,30}\s+\1[:：]\s*(.+)$/i);
+    if (doublePrefixMatch) {
+      text = `${doublePrefixMatch[1]}: ${doublePrefixMatch[2]}`;
+    }
+
+    // 6. Clean extra spaces
+    text = text.replace(/\s{2,}/g, ' ').trim();
+
+    return text;
+  }
+
   function normalizeSnippet(raw) {
-    return cleanUnicode(raw)
+    return sanitizeMessageText(raw)
       .replace(/^[^:：\n]+[:：]\s*/, '') // Remove sender prefix if present
       .replace(/\s+/g, ' ')
       .toLowerCase();
@@ -294,13 +357,25 @@
    * Parses sender and message from snippet
    */
   function splitSenderAndMessage(raw) {
-    const clean = cleanUnicode(raw);
-    const match = clean.match(/^([^:：\n]{1,40})\s*[:：]\s*(.+)$/s);
+    const clean = sanitizeMessageText(raw);
+    const match = clean.match(/^([^:：\n]{1,35})\s*[:：]\s*(.+)$/s);
     if (match) {
+      let sender = match[1].trim();
+      let message = match[2].trim();
+
+      if (sender.includes(':')) {
+        sender = sender.split(':')[0].trim();
+      }
+      if (sender.includes('@')) {
+        sender = sender.split('@')[0].trim() || 'Someone';
+      }
+
+      message = sanitizeMessageText(message);
+
       return {
         hasPrefix: true,
-        sender: match[1].trim(),
-        message: match[2].trim()
+        sender: sender || 'Someone',
+        message: message
       };
     }
     return {
@@ -315,24 +390,43 @@
    * or falling back to text snippet parsing.
    */
   function extractSenderAndMessage(rawSnippet, rowElement) {
+    const sanitized = sanitizeMessageText(rawSnippet);
+    const fromSnippet = splitSenderAndMessage(sanitized);
+    if (fromSnippet.hasPrefix) {
+      return fromSnippet;
+    }
+
     if (rowElement) {
-      const cardText = rowElement.innerText || '';
-      const lines = cardText.split('\n').map((l) => l.trim()).filter(Boolean);
-      const colonIndex = lines.indexOf(':') !== -1 ? lines.indexOf(':') : lines.indexOf('：');
-      if (colonIndex > 0 && colonIndex < lines.length - 1) {
-        const sender = lines[colonIndex - 1];
-        const message = lines.slice(colonIndex + 1).join(' ').trim();
-        if (sender && !sender.toLowerCase().includes('draft') && sender.length <= 50) {
-          return {
-            hasPrefix: true,
-            sender: cleanUnicode(sender),
-            message: cleanUnicode(message)
-          };
+      const secondaryContainer =
+        rowElement.querySelector('div[data-testid="cell-frame-secondary"]') ||
+        rowElement.querySelector('div._ak8l') ||
+        rowElement.querySelector('div[role="gridcell"]:last-child');
+
+      if (secondaryContainer) {
+        const spans = Array.from(secondaryContainer.querySelectorAll('span'));
+        const colonIdx = spans.findIndex((s) => s.textContent.trim() === ':' || s.textContent.trim() === '：');
+        if (colonIdx > 0 && colonIdx < spans.length - 1) {
+          let sender = spans.slice(0, colonIdx).map((s) => s.textContent).join(' ').trim();
+          let message = spans.slice(colonIdx + 1).map((s) => s.textContent).join(' ').trim();
+
+          sender = sanitizeMessageText(sender);
+          message = sanitizeMessageText(message);
+
+          if (sender.includes(':')) sender = sender.split(':')[0].trim();
+          if (sender.includes('@')) sender = sender.split('@')[0].trim();
+
+          if (sender && !sender.toLowerCase().includes('draft') && sender.length <= 35) {
+            return {
+              hasPrefix: true,
+              sender: sender,
+              message: message
+            };
+          }
         }
       }
     }
 
-    return splitSenderAndMessage(rawSnippet);
+    return fromSnippet;
   }
 
   /**
@@ -444,9 +538,14 @@
     return false;
   }
 
-  function dispatchNotification({ category, title, body, chatTitle, unreadCount, sender, matchedTag }) {
+  function dispatchNotification({ category, title, body, chatTitle, unreadCount, sender, matchedTag, avatarUrl }) {
     if (!isExtensionValid()) {
       stopAllObservation();
+      return;
+    }
+
+    if (category === 'DM' && isDirectMessageMuted(chatTitle || title)) {
+      console.log('[WhatsApp Notifier] Blocked DM alert for muted contact:', chatTitle || title);
       return;
     }
 
@@ -477,6 +576,7 @@
           chatTitle,
           unreadCount: unreadCount || 1,
           matchedTag: matchedTag || '',
+          avatarUrl: avatarUrl || '',
           timestamp: Date.now()
         }
       }).catch((err) => {
@@ -627,7 +727,18 @@
     title = title.trim();
     if (!title || title.toLowerCase().includes('click here')) return null;
 
-    // 2. Extract Unread Badge & Count
+    // 2. Extract Avatar Image URL specifically from THIS isolated chat row
+    let avatarUrl = '';
+    const avatarImg =
+      row.querySelector('img[src*="cdn.whatsapp.net"]') ||
+      row.querySelector('img[src^="http"]') ||
+      row.querySelector('img[src^="blob:"]') ||
+      row.querySelector('img[src^="data:image"]');
+    if (avatarImg) {
+      avatarUrl = avatarImg.getAttribute('src') || '';
+    }
+
+    // 3. Extract Unread Badge & Count
     let unreadCount = 0;
     const unreadEl =
       row.querySelector('span[aria-label*="unread" i]') ||
@@ -641,7 +752,7 @@
       unreadCount = match ? parseInt(match[0], 10) : 1;
     }
 
-    // 3. Extract Message Snippet (Strictly excluding badges, counts, and timestamps)
+    // 4. Extract Message Snippet (Strictly excluding badges, counts, and timestamps)
     let snippet = '';
     const secondaryContainer =
       row.querySelector('div[data-testid="cell-frame-secondary"]') ||
@@ -649,40 +760,53 @@
       row.querySelector('div[role="gridcell"]:last-child') ||
       row;
 
-    const textEl =
+    // Isolate the preview text container (strictly separate from meta/badge container)
+    const previewContainer =
       secondaryContainer.querySelector('span[data-testid="last-msg-text"]') ||
       secondaryContainer.querySelector('span._ao3e') ||
       secondaryContainer.querySelector('span[dir="ltr"]') ||
-      secondaryContainer.querySelector('span[dir="auto"]') ||
+      (secondaryContainer.children && secondaryContainer.children[0]) ||
       secondaryContainer;
 
-    if (textEl) {
-      const clone = textEl.cloneNode(true);
-      clone.querySelectorAll('span[aria-label*="unread" i], [data-testid="icon-unread-count"], svg, [data-icon]').forEach((n) => n.remove());
-      const rawText = cleanUnicode(clone.textContent || '');
+    if (previewContainer) {
+      const clone = previewContainer.cloneNode(true);
+      // Strip all meta, badge, pin, and hidden accessibility elements
+      clone.querySelectorAll(
+        'div[data-testid="cell-frame-meta"], div._ak8m, div[class*="cell-frame-meta"], ' +
+        'span[data-icon], svg, [class*="icon"], [class*="push-pin"], [class*="unread"], ' +
+        '[aria-label*="unread" i], [data-testid="icon-unread-count"], [aria-hidden="true"], [class*="invisible"]'
+      ).forEach((n) => n.remove());
+
+      const rawText = sanitizeMessageText(clone.textContent || '');
       if (isValidMessageSnippet(rawText)) {
         snippet = rawText;
       }
+    }
+
+    // Check if the snippet represents an image/photo message
+    const hasPhotoIcon = !!secondaryContainer.querySelector('[data-icon="status-image"], [data-icon="image"], [data-icon="camera"], [data-icon="photo"]');
+    if (hasPhotoIcon && (!snippet || snippet.toLowerCase() === 'photo')) {
+      snippet = 'Photo';
     }
 
     if (!isValidMessageSnippet(snippet)) {
       snippet = '';
     }
 
-    // 4. Classify Group vs 1-on-1 (Direct)
+    // 5. Classify Group vs 1-on-1 (Direct)
     const isGroup = detectIsGroup(title, row, snippet);
 
-    // 5. Detect Mention: ONLY AND EXCLUSIVELY when the message text matches a keyword in user's list!
-    // Never auto-detect or guess from icons.
+    // 6. Detect Mention: ONLY AND EXCLUSIVELY when the message text matches a keyword in user's list!
+    // Never auto-detect from icons. Never use row.innerText (eliminates cross-card bleed)!
     let hasMentionForMe = false;
     let matchedSavedTag = '';
     if (isGroup && snippet) {
       const isOutbound = !!row.querySelector('[data-icon^="status-vcheck"], [data-icon^="status-dblcheck"], [data-icon="status-time"]');
       if (!isOutbound) {
         const parsed = extractSenderAndMessage(snippet, row);
-        // Test message body, full snippet, and card text against user's saved list
+        // Test message body and full snippet against user's saved list - strictly isolated to this card!
         const textToTest = parsed.hasPrefix ? parsed.message : snippet;
-        const matched = findMatchingTag(textToTest) || findMatchingTag(snippet) || findMatchingTag(row.innerText || '');
+        const matched = findMatchingTag(textToTest) || findMatchingTag(snippet);
         if (matched) {
           hasMentionForMe = true;
           matchedSavedTag = matched;
@@ -696,6 +820,7 @@
       hasMention: hasMentionForMe,
       matchedTag: matchedSavedTag,
       snippet,
+      avatarUrl,
       isGroup
     };
   }
@@ -708,7 +833,16 @@
 
     if (!pane) return;
 
-    const rows = pane.querySelectorAll('div[role="listitem"], div[role="row"], div[data-testid^="list-item-"], div[tabindex="-1"]');
+    // Strictly select root chat list items and eliminate nested child elements
+    const rawCandidates = Array.from(
+      pane.querySelectorAll('div[role="listitem"], div[role="row"], div[data-testid^="list-item-"], div._ak72')
+    );
+
+    // Keep only elements that are not contained inside another candidate row
+    const rows = rawCandidates.filter(
+      (el, idx, arr) => !arr.some((other) => other !== el && other.contains(el))
+    );
+
     if (!rows.length) return;
 
     // First scan creates baseline without alerting
@@ -754,7 +888,8 @@
                 body: parsed.hasPrefix ? parsed.message : data.snippet,
                 chatTitle: data.title,
                 unreadCount: data.unreadCount,
-                matchedTag: data.matchedTag || ''
+                matchedTag: data.matchedTag || '',
+                avatarUrl: data.avatarUrl || ''
               });
 
               chatStateMap.set(data.title, {
@@ -768,6 +903,17 @@
           }
         } else {
           // 1-on-1 Direct Message
+          // Check if contact is muted by user for direct messages
+          if (isDirectMessageMuted(data.title)) {
+            chatStateMap.set(data.title, {
+              unreadCount: data.unreadCount,
+              lastSnippet: data.snippet,
+              lastNotifiedSnippet: data.snippet,
+              isGroup: false
+            });
+            continue;
+          }
+
           // Re-verify the row element to catch any newly rendered group markers before alerting
           const recheckedIsGroup = detectIsGroup(data.title, row, data.snippet);
           if (recheckedIsGroup) {
@@ -792,7 +938,8 @@
                 sender: data.title,
                 body: data.snippet,
                 chatTitle: data.title,
-                unreadCount: data.unreadCount
+                unreadCount: data.unreadCount,
+                avatarUrl: data.avatarUrl || ''
               });
             }
 
@@ -927,15 +1074,26 @@
 
     let messageText = cleanUnicode(textContainer.textContent || latestBubble.textContent || '');
     messageText = messageText.replace(/\s*\d{1,2}:\d{2}(\s*[ap]m)?\s*$/i, '').trim();
+    messageText = sanitizeMessageText(messageText);
     if (!messageText) return;
 
     // Check if this new incoming bubble specifically matches one of the user's explicit keywords
     const matchedTag = findMatchingTag(messageText, latestBubble);
 
     if (matchedTag && config.notifyMention) {
-      let senderName = 'Someone';
+      let senderName = '';
       let cur = latestBubble;
       while (cur && cur.classList && (cur.classList.contains('message-in') || cur.getAttribute('data-testid') === 'msg-container')) {
+        const copyableEl = cur.querySelector('div.copyable-text[data-pre-plain-text]');
+        if (copyableEl) {
+          const preText = copyableEl.getAttribute('data-pre-plain-text') || '';
+          const match = preText.match(/\]\s*([^:]+):/);
+          if (match && match[1]) {
+            senderName = match[1].trim();
+            break;
+          }
+        }
+
         const authorEl =
           cur.querySelector('div[data-testid="author"]') ||
           cur.querySelector('span[aria-label][dir="auto"]') ||
@@ -946,6 +1104,13 @@
         }
         cur = cur.previousElementSibling;
       }
+      if (!senderName) senderName = 'Someone';
+
+      let headerAvatarUrl = '';
+      if (header) {
+        const headerImg = header.querySelector('img[src*="cdn.whatsapp.net"], img[src^="http"], img[src^="blob:"], img[src^="data:"]');
+        if (headerImg) headerAvatarUrl = headerImg.getAttribute('src') || '';
+      }
 
       dispatchNotification({
         category: 'MENTION',
@@ -953,7 +1118,8 @@
         sender: senderName,
         body: messageText,
         chatTitle: chatTitle,
-        matchedTag
+        matchedTag,
+        avatarUrl: headerAvatarUrl
       });
     }
   }

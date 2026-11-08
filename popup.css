@@ -22,7 +22,7 @@
 }
 
 body {
-  width: 370px;
+  width: 380px;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-size: 13px;
@@ -321,6 +321,16 @@ input[type="text"]:focus {
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+.muted-contact-tag {
+  background: rgba(241, 92, 109, 0.12);
+  color: #ff9da8;
+  border: 1px solid rgba(241, 92, 109, 0.28);
+}
+
+.muted-contact-tag:hover {
+  border-color: rgba(241, 92, 109, 0.5);
+}
+
 .keyword-tag-remove {
   cursor: pointer;
   color: var(--text-secondary);
@@ -402,6 +412,9 @@ input[type="text"]:focus {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-height: 480px;
+  overflow-y: auto;
+  padding-right: 2px;
   animation: waFadeIn 0.2s ease-out;
 }
 
@@ -502,12 +515,17 @@ input[type="text"]:focus {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .history-badges-wrapper {
   display: flex;
   align-items: center;
   gap: 5px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .history-unread-pill {
@@ -515,10 +533,12 @@ input[type="text"]:focus {
   color: #111b21;
   font-size: 8px;
   font-weight: 700;
-  padding: 1px 5px;
+  padding: 1px 6px;
   border-radius: 8px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .history-read-pill {
@@ -527,18 +547,22 @@ input[type="text"]:focus {
   border: 1px solid rgba(134, 150, 160, 0.3);
   font-size: 8px;
   font-weight: 700;
-  padding: 1px 5px;
+  padding: 1px 6px;
   border-radius: 8px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .history-badge {
   font-size: 9px;
   font-weight: 700;
-  padding: 1px 5px;
+  padding: 1px 6px;
   border-radius: 4px;
   text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .history-badge-dm {
@@ -557,9 +581,16 @@ input[type="text"]:focus {
   border: 1px solid rgba(255, 152, 0, 0.35);
   font-size: 8px;
   font-weight: 700;
-  padding: 1px 5px;
+  padding: 1px 6px;
   border-radius: 8px;
   letter-spacing: 0.2px;
+  white-space: nowrap;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 .history-actions-wrapper {
@@ -615,6 +646,8 @@ input[type="text"]:focus {
 .history-time {
   color: var(--text-muted);
   font-size: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .history-title {
@@ -623,6 +656,7 @@ input[type="text"]:focus {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .history-item-tagged {
@@ -638,6 +672,10 @@ input[type="text"]:focus {
   color: var(--accent-orange);
   font-weight: 500;
   margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .history-body {
