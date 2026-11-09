@@ -242,7 +242,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isAlreadyAdded = currentMutedContacts.some((c) => c.toLowerCase() === val.toLowerCase());
     if (!isAlreadyAdded) {
       currentMutedContacts.push(val);
-      chrome.storage.local.set({ mutedDMContacts: currentMutedContacts });
+      const cleanVal = val.toLowerCase();
+      cachedHistory = cachedHistory.filter((cItem) => {
+        const cIsMention = cItem.category === 'MENTION';
+        const cName = (!cIsMention ? (cItem.chatTitle || cItem.title) : (cItem.sender || cItem.chatTitle || cItem.title) || '').trim().toLowerCase();
+        return !(cName === cleanVal || cName.includes(cleanVal) || cleanVal.includes(cName));
+      });
+      chrome.storage.local.set({
+        mutedDMContacts: currentMutedContacts,
+        notificationHistory: cachedHistory
+      });
       renderMutedContacts();
       renderHistory(cachedHistory);
     }
@@ -388,22 +397,45 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!contactName) return;
 
         const cleanTarget = contactName.toLowerCase();
-        const existingIndex = currentMutedContacts.findIndex((c) => {
+        const isAlreadyMuted = currentMutedContacts.some((c) => {
           const term = (c || '').trim().toLowerCase();
           return term && (cleanTarget === term || cleanTarget.includes(term) || term.includes(cleanTarget));
         });
 
-        if (existingIndex !== -1) {
-          // Unmute
-          currentMutedContacts.splice(existingIndex, 1);
-        } else {
+        if (!isAlreadyMuted) {
           // Mute and add to list
           currentMutedContacts.push(contactName);
         }
 
-        chrome.storage.local.set({ mutedDMContacts: currentMutedContacts });
+        // Remove cards belonging to this contact so they disappear from message section
+        cachedHistory = cachedHistory.filter((cItem) => {
+          const cIsMention = cItem.category === 'MENTION';
+          const cName = (!cIsMention ? (cItem.chatTitle || cItem.title) : (cItem.sender || cItem.chatTitle || cItem.title) || '').trim().toLowerCase();
+          return !(cName === cleanTarget || cName.includes(cleanTarget) || cleanTarget.includes(cName));
+        });
+
+        chrome.storage.local.set({
+          mutedDMContacts: currentMutedContacts,
+          notificationHistory: cachedHistory
+        });
         renderMutedContacts();
-        renderHistory(cachedHistory);
+
+        // Animate the card disappearing smoothly
+        const cardRow = btn.closest('.history-item');
+        if (cardRow) {
+          cardRow.style.transition = 'opacity 0.22s ease, transform 0.22s ease, max-height 0.28s ease, margin 0.28s ease, padding 0.28s ease';
+          cardRow.style.opacity = '0';
+          cardRow.style.transform = 'translateX(25px)';
+          cardRow.style.maxHeight = '0';
+          cardRow.style.paddingTop = '0';
+          cardRow.style.paddingBottom = '0';
+          cardRow.style.overflow = 'hidden';
+          setTimeout(() => {
+            renderHistory(cachedHistory);
+          }, 240);
+        } else {
+          renderHistory(cachedHistory);
+        }
       });
     });
 
@@ -415,7 +447,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!isNaN(idx) && idx >= 0 && idx < cachedHistory.length) {
           cachedHistory.splice(idx, 1);
           chrome.storage.local.set({ notificationHistory: cachedHistory });
-          renderHistory(cachedHistory);
+
+          const cardRow = btn.closest('.history-item');
+          if (cardRow) {
+            cardRow.style.transition = 'opacity 0.2s ease, transform 0.2s ease, max-height 0.25s ease, margin 0.25s ease, padding 0.25s ease';
+            cardRow.style.opacity = '0';
+            cardRow.style.transform = 'translateX(25px)';
+            cardRow.style.maxHeight = '0';
+            cardRow.style.paddingTop = '0';
+            cardRow.style.paddingBottom = '0';
+            cardRow.style.overflow = 'hidden';
+            setTimeout(() => {
+              renderHistory(cachedHistory);
+            }, 220);
+          } else {
+            renderHistory(cachedHistory);
+          }
         }
       });
     });
