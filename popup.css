@@ -601,6 +601,58 @@ input[type="text"]:focus {
   margin-left: 6px;
 }
 
+.history-actions-confirm {
+  gap: 6px;
+  background: rgba(241, 92, 109, 0.12);
+  border: 1px solid rgba(241, 92, 109, 0.32);
+  padding: 2px 7px;
+  border-radius: 6px;
+  animation: waFadeIn 0.15s ease-out;
+}
+
+.card-confirm-label {
+  color: #ff9da8;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.btn-card-confirm-yes {
+  background: var(--danger-color);
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  transition: background 0.15s, transform 0.12s;
+}
+
+.btn-card-confirm-yes:hover {
+  background: #ff6b7d;
+  transform: scale(1.05);
+}
+
+.btn-card-confirm-no {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.btn-card-confirm-no:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .history-actions-wrapper button svg {
   display: block;
   pointer-events: none;

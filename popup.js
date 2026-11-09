@@ -361,7 +361,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Click card to open chat in WhatsApp Web
       row.addEventListener('click', (e) => {
-        if (e.target.closest('.btn-card-delete') || e.target.closest('.btn-card-mute')) return;
+        if (e.target.closest('.btn-card-delete') || e.target.closest('.btn-card-mute') || e.target.closest('.history-actions-confirm')) return;
         const targetTitle = item.chatTitle || item.title;
         if (!targetTitle) return;
 
@@ -396,46 +396,68 @@ document.addEventListener('DOMContentLoaded', async () => {
         const contactName = (!isMention ? (item.chatTitle || item.title) : (item.sender || item.chatTitle || item.title) || '').trim();
         if (!contactName) return;
 
-        const cleanTarget = contactName.toLowerCase();
-        const isAlreadyMuted = currentMutedContacts.some((c) => {
-          const term = (c || '').trim().toLowerCase();
-          return term && (cleanTarget === term || cleanTarget.includes(term) || term.includes(cleanTarget));
-        });
+        const actionsWrapper = btn.closest('.history-actions-wrapper');
+        if (!actionsWrapper) return;
 
-        if (!isAlreadyMuted) {
-          // Mute and add to list
-          currentMutedContacts.push(contactName);
-        }
+        // Show confirmation before muting
+        actionsWrapper.className = 'history-actions-wrapper history-actions-confirm';
+        actionsWrapper.innerHTML = `
+          <span class="card-confirm-label">Mute?</span>
+          <button class="btn-card-confirm-yes" title="Confirm mute direct messages">Yes</button>
+          <button class="btn-card-confirm-no" title="Cancel">✕</button>
+        `;
 
-        // Remove cards belonging to this contact so they disappear from message section
-        cachedHistory = cachedHistory.filter((cItem) => {
-          const cIsMention = cItem.category === 'MENTION';
-          const cName = (!cIsMention ? (cItem.chatTitle || cItem.title) : (cItem.sender || cItem.chatTitle || cItem.title) || '').trim().toLowerCase();
-          return !(cName === cleanTarget || cName.includes(cleanTarget) || cleanTarget.includes(cName));
-        });
+        const confirmYes = actionsWrapper.querySelector('.btn-card-confirm-yes');
+        const confirmNo = actionsWrapper.querySelector('.btn-card-confirm-no');
 
-        chrome.storage.local.set({
-          mutedDMContacts: currentMutedContacts,
-          notificationHistory: cachedHistory
-        });
-        renderMutedContacts();
+        confirmYes?.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const cleanTarget = contactName.toLowerCase();
+          const isAlreadyMuted = currentMutedContacts.some((c) => {
+            const term = (c || '').trim().toLowerCase();
+            return term && (cleanTarget === term || cleanTarget.includes(term) || term.includes(cleanTarget));
+          });
 
-        // Animate the card disappearing smoothly
-        const cardRow = btn.closest('.history-item');
-        if (cardRow) {
-          cardRow.style.transition = 'opacity 0.22s ease, transform 0.22s ease, max-height 0.28s ease, margin 0.28s ease, padding 0.28s ease';
-          cardRow.style.opacity = '0';
-          cardRow.style.transform = 'translateX(25px)';
-          cardRow.style.maxHeight = '0';
-          cardRow.style.paddingTop = '0';
-          cardRow.style.paddingBottom = '0';
-          cardRow.style.overflow = 'hidden';
-          setTimeout(() => {
+          if (!isAlreadyMuted) {
+            // Mute and add to list
+            currentMutedContacts.push(contactName);
+          }
+
+          // Remove cards belonging to this contact so they disappear from message section
+          cachedHistory = cachedHistory.filter((cItem) => {
+            const cIsMention = cItem.category === 'MENTION';
+            const cName = (!cIsMention ? (cItem.chatTitle || cItem.title) : (cItem.sender || cItem.chatTitle || cItem.title) || '').trim().toLowerCase();
+            return !(cName === cleanTarget || cName.includes(cleanTarget) || cleanTarget.includes(cName));
+          });
+
+          chrome.storage.local.set({
+            mutedDMContacts: currentMutedContacts,
+            notificationHistory: cachedHistory
+          });
+          renderMutedContacts();
+
+          // Animate the card disappearing smoothly
+          const cardRow = actionsWrapper.closest('.history-item');
+          if (cardRow) {
+            cardRow.style.transition = 'opacity 0.22s ease, transform 0.22s ease, max-height 0.28s ease, margin 0.28s ease, padding 0.28s ease';
+            cardRow.style.opacity = '0';
+            cardRow.style.transform = 'translateX(25px)';
+            cardRow.style.maxHeight = '0';
+            cardRow.style.paddingTop = '0';
+            cardRow.style.paddingBottom = '0';
+            cardRow.style.overflow = 'hidden';
+            setTimeout(() => {
+              renderHistory(cachedHistory);
+            }, 240);
+          } else {
             renderHistory(cachedHistory);
-          }, 240);
-        } else {
+          }
+        });
+
+        confirmNo?.addEventListener('click', (ev) => {
+          ev.stopPropagation();
           renderHistory(cachedHistory);
-        }
+        });
       });
     });
 
