@@ -596,19 +596,55 @@ input[type="text"]:focus {
 .history-actions-wrapper {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+
+.btn-card-mute {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  border-radius: 50%;
+  transition: color 0.2s, background-color 0.2s, transform 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  z-index: 2;
+  padding: 0;
+}
+
+.btn-card-mute:hover {
+  color: #ff9da8;
+  background: rgba(241, 92, 109, 0.16);
+  transform: scale(1.12);
+}
+
+.btn-card-mute.is-muted {
+  color: #ff6b7d;
+  background: rgba(241, 92, 109, 0.22);
+}
+
+.btn-card-mute.is-muted:hover {
+  color: #ffa3ae;
+  background: rgba(241, 92, 109, 0.32);
 }
 
 .btn-card-delete {
   background: none;
   border: none;
   color: var(--text-muted);
-  font-size: 22px;
+  font-size: 20px;
   line-height: 1;
   cursor: pointer;
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
   border-radius: 50%;
   transition: color 0.2s, background-color 0.2s, transform 0.15s;
   display: flex;

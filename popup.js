@@ -198,6 +198,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Muted Contacts management (Direct Messages)
+  function isContactMuted(contactName) {
+    if (!contactName || !Array.isArray(currentMutedContacts) || currentMutedContacts.length === 0) {
+      return false;
+    }
+    const cleanTarget = contactName.trim().toLowerCase();
+    return currentMutedContacts.some((c) => {
+      const term = (c || '').trim().toLowerCase();
+      return term && (cleanTarget === term || cleanTarget.includes(term) || term.includes(cleanTarget));
+    });
+  }
+
   function renderMutedContacts() {
     if (!mutedContactsContainer) return;
     mutedContactsContainer.innerHTML = '';
@@ -218,6 +229,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           currentMutedContacts.splice(idx, 1);
           chrome.storage.local.set({ mutedDMContacts: currentMutedContacts });
           renderMutedContacts();
+          renderHistory(cachedHistory);
         }
       });
     });
@@ -232,6 +244,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentMutedContacts.push(val);
       chrome.storage.local.set({ mutedDMContacts: currentMutedContacts });
       renderMutedContacts();
+      renderHistory(cachedHistory);
     }
     mutedContactInput.value = '';
   }
@@ -292,6 +305,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         senderHtml = `<div class="history-sender">Tagged by <strong>${escapeHtml(item.sender)}</strong>:</div>`;
       }
 
+      const contactName = (!isMention ? (item.chatTitle || item.title) : (item.sender || item.chatTitle || item.title) || '').trim();
+      const isMuted = isContactMuted(contactName);
+      const muteTitle = isMuted
+        ? `Unmute direct messages from ${escapeHtml(contactName)}`
+        : `Mute direct messages from ${escapeHtml(contactName)}`;
+
+      const muteIconSvg = isMuted
+        ? `<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <line x1="22" y1="9" x2="16" y2="15"></line>
+            <line x1="16" y1="9" x2="22" y2="15"></line>
+          </svg>`
+        : `<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <line x1="22" y1="9" x2="16" y2="15"></line>
+            <line x1="16" y1="9" x2="22" y2="15"></line>
+          </svg>`;
+
       row.innerHTML = `
         <div class="history-item-content">
           <div class="history-item-header">
@@ -306,12 +337,17 @@ document.addEventListener('DOMContentLoaded', async () => {
           ${senderHtml}
           <div class="history-body ${isMention ? 'history-body-mention' : ''}">${escapeHtml(item.body || '')}</div>
         </div>
-        <button class="btn-card-delete" title="Delete this card" data-index="${index}">&times;</button>
+        <div class="history-actions-wrapper">
+          <button class="btn-card-mute ${isMuted ? 'is-muted' : ''}" title="${muteTitle}" data-index="${index}" aria-label="Mute contact">
+            ${muteIconSvg}
+          </button>
+          <button class="btn-card-delete" title="Delete this card" data-index="${index}">&times;</button>
+        </div>
       `;
 
       // Click card to open chat in WhatsApp Web
       row.addEventListener('click', (e) => {
-        if (e.target.closest('.btn-card-delete')) return;
+        if (e.target.closest('.btn-card-delete') || e.target.closest('.btn-card-mute')) return;
         const targetTitle = item.chatTitle || item.title;
         if (!targetTitle) return;
 
@@ -333,6 +369,37 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       historyList.appendChild(row);
+    });
+
+    // Individual card mute handler
+    historyList.querySelectorAll('.btn-card-mute').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.index, 10);
+        if (isNaN(idx) || idx < 0 || idx >= cachedHistory.length) return;
+        const item = cachedHistory[idx];
+        const isMention = item.category === 'MENTION';
+        const contactName = (!isMention ? (item.chatTitle || item.title) : (item.sender || item.chatTitle || item.title) || '').trim();
+        if (!contactName) return;
+
+        const cleanTarget = contactName.toLowerCase();
+        const existingIndex = currentMutedContacts.findIndex((c) => {
+          const term = (c || '').trim().toLowerCase();
+          return term && (cleanTarget === term || cleanTarget.includes(term) || term.includes(cleanTarget));
+        });
+
+        if (existingIndex !== -1) {
+          // Unmute
+          currentMutedContacts.splice(existingIndex, 1);
+        } else {
+          // Mute and add to list
+          currentMutedContacts.push(contactName);
+        }
+
+        chrome.storage.local.set({ mutedDMContacts: currentMutedContacts });
+        renderMutedContacts();
+        renderHistory(cachedHistory);
+      });
     });
 
     // Individual card delete handler
