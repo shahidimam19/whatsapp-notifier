@@ -601,6 +601,11 @@ input[type="text"]:focus {
   margin-left: 6px;
 }
 
+.history-actions-wrapper button svg {
+  display: block;
+  pointer-events: none;
+}
+
 .btn-card-mute {
   background: none;
   border: none;
@@ -639,8 +644,6 @@ input[type="text"]:focus {
   background: none;
   border: none;
   color: var(--text-muted);
-  font-size: 20px;
-  line-height: 1;
   cursor: pointer;
   width: 26px;
   height: 26px;
